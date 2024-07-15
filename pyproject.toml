@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyrd"
-version = "1.0.0"
+version = "2.0.0"
 description = "Real-Debrid API bindings for Python"
 authors = ["Dominic Frye <me@itsnebula.net>"]
 license = "MIT"
