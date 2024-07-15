@@ -163,3 +163,4 @@ cython_debug/
 */.DS_Store
 docs
 mkdocs.yml
+examples/config.json

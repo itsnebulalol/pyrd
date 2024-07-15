@@ -1,6 +1,6 @@
 # pyrd
 
-**pyrd** is a library providing bindings for the Real-Debrid API. Premium account required for most endpoints.
+**pyrd** is an asynchronous library providing bindings for the Real-Debrid API. Premium account required for most endpoints.
 
 # Usage
 
@@ -12,13 +12,8 @@ $ pip install pyrd
 
 ## Using the API
 
-```python
-from realdebrid import RealDebrid
-
-rd = RealDebrid("TOKEN HERE")
-print(rd.user.get().json())
-```
+Every function has a docstring, and examples are provided in the [examples directory](https://github.com/itsnebulalol/pyrd/tree/main/examples).
 
 # Credits
 
-This project is inspired by [s-krilla/rd_api_py](https://github.com/s-krilla/rd_api_py). pyrd is intended to be a maintained, modern recreation of rd_api_py.
+This project is inspired by [s-krilla/rd_api_py](https://github.com/s-krilla/rd_api_py). pyrd is intended to be a maintained, modern, asynchronous recreation of rd_api_py.

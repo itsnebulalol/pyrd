@@ -10,8 +10,8 @@ async def main():
         config = load(f)
 
     async with RealDebrid(config["token"]) as rd:
-        user = await rd.user.get()
-        print(await user.json())
+        torrents = await rd.torrents.get()
+        print(await torrents.json())
 
 
 if __name__ == "__main__":

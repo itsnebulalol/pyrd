@@ -25,7 +25,7 @@ packages = [{ include = "realdebrid" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-requests = "^2.32.3"
+aiohttp = "^3.9.5"
 
 [tool.black]
 line-length = 119

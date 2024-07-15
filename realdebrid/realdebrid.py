@@ -1,4 +1,4 @@
-import requests
+import aiohttp
 
 from pathlib import Path
 
@@ -9,7 +9,7 @@ class RealDebrid:
     def __init__(self, token: str, base_url: str = "https://api.real-debrid.com/rest/1.0") -> None:
         self.token = token
         self.base_url = base_url
-        self.headers = {"Authorization": f"Bearer {self.token}"}
+        self.session = aiohttp.ClientSession(headers={"Authorization": f"Bearer {self.token}"})
 
         self.validate_token()
 
@@ -23,6 +23,12 @@ class RealDebrid:
         self.hosts = self.Hosts(self)
         self.settings = self.Settings(self)
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
     def validate_token(self) -> None:
         """Validate if self.token is not empty
 
@@ -32,31 +38,33 @@ class RealDebrid:
         if self.token in (None, ""):
             raise exceptions.InvalidTokenException()
 
-    def get(self, path: str, **options) -> requests.Response:
+    async def get(self, path: str, **options) -> aiohttp.ClientResponse:
         """Make an HTTP GET request to the Real-Debrid API
 
         Args:
             path (str): API path
 
         Returns:
-            requests.Response: Request object from requests library
+            aiohttp.ClientResponse: Request object from aiohttp library
         """
-        req = requests.get(self.base_url + path, headers=self.headers, params=options)
-        return self.handler(req, path)
+        async with self.session.get(
+            self.base_url + path, params={k: v for k, v in options.items() if v is not None}
+        ) as req:
+            return await self.handler(req, path)
 
-    def post(self, path: str, **payload) -> requests.Response:
+    async def post(self, path: str, **payload) -> aiohttp.ClientResponse:
         """Make an HTTP POST request to the Real-Debrid API
 
         Args:
             path (str): API path
 
         Returns:
-            requests.Response: Request object from requests library
+            aiohttp.ClientResponse: Request object from aiohttp library
         """
-        req = requests.post(self.base_url + path, headers=self.headers, data=payload)
-        return self.handler(req, path)
+        async with self.session.post(self.base_url + path, data=payload) as req:
+            return await self.handler(req, path)
 
-    def put(self, path: str, filepath: Path | str, **payload) -> requests.Response:
+    async def put(self, path: str, filepath: Path | str, **payload) -> aiohttp.ClientResponse:
         """Make an HTTP PUT request to the Real-Debrid API
 
         Args:
@@ -64,29 +72,31 @@ class RealDebrid:
             filepath (Path | str): Path to a file
 
         Returns:
-            requests.Response: Request object from requests library
+            aiohttp.ClientResponse: Request object from aiohttp library
         """
         with open(filepath, "rb") as file:
-            req = requests.put(self.base_url + path, headers=self.headers, data=file, params=payload)
-        return self.handler(req, path)
+            async with self.session.put(
+                self.base_url + path, data=file, params={k: v for k, v in payload.items() if v is not None}
+            ) as req:
+                return await self.handler(req, path)
 
-    def delete(self, path: str) -> requests.Response:
+    async def delete(self, path: str) -> aiohttp.ClientResponse:
         """Make an HTTP DELETE request to the Real-Debrid API
 
         Args:
             path (str): API path
 
         Returns:
-            requests.Response: Request object from requests library
+            aiohttp.ClientResponse: Request object from aiohttp library
         """
-        req = requests.delete(self.base_url + path, headers=self.headers)
-        return self.handler(req, path)
+        async with self.session.delete(self.base_url + path) as req:
+            return await self.handler(req, path)
 
-    def handler(self, req: requests.Response, path: str) -> requests.Response:
+    async def handler(self, req: aiohttp.ClientResponse, path: str) -> aiohttp.ClientResponse:
         """API request handler
 
         Args:
-            req (requests.Response): Finished request
+            req (aiohttp.ClientResponse): Finished request
             path (str): API path
 
         Raises:
@@ -94,70 +104,69 @@ class RealDebrid:
             exceptions.RealDebridError: Thrown when an error returned from Real-Debrid is caught
 
         Returns:
-            requests.Response: Request object from requests library
+            aiohttp.ClientResponse: Request object from aiohttp library
         """
         try:
             req.raise_for_status()
-        except (
-            requests.exceptions.HTTPError,
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout,
-            requests.exceptions.RequestException,
-        ) as e:
+        except aiohttp.ClientError as e:
             raise exceptions.APIError(e)
 
-        if "error_code" in req.json():
-            code = req.json()["error_code"]
+        json = await req.json()
+        if "error_code" in json:
+            code = json["error_code"]
             message = data.error_codes.get(str(code), "Unknown error")
             raise exceptions.RealDebridError(f"{code}: {message} at {path}")
 
         return req
 
+    async def close(self) -> None:
+        await self.session.close()
+
     class System:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def disable_token(self) -> requests.Response:
+        async def disable_token(self) -> aiohttp.ClientResponse:
             """Disable current access token
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/disable_access_token")
+            return await self.rd.get("/disable_access_token")
 
-        def time(self) -> requests.Response:
+        async def time(self) -> aiohttp.ClientResponse:
             """Get server time
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/time")
+            return await self.rd.get("/time")
 
-        def iso_time(self) -> requests.Response:
+        async def iso_time(self) -> aiohttp.ClientResponse:
             """Get server time in ISO
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/time/iso")
+            return await self.rd.get("/time/iso")
 
     class User:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def get(self) -> requests.Response:
+        async def get(self) -> aiohttp.ClientResponse:
             """Returns some information on the current user
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/user")
+            return await self.rd.get("/user")
 
     class Unrestrict:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def check(self, link: str, password: str = None) -> requests.Response:
+        async def check(self, link: str, password: str = None) -> aiohttp.ClientResponse:
             """Check if a file is downloadable from the hoster
 
             Args:
@@ -165,11 +174,11 @@ class RealDebrid:
                 password (str, optional): Password to unlock file from the hoster. Defaults to None.
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.post("/unrestrict/check", link=link, password=password)
+            return await self.rd.post("/unrestrict/check", link=link, password=password)
 
-        def link(self, link: str, password: str = None, remote: str = None) -> requests.Response:
+        async def link(self, link: str, password: str = None, remote: str = None) -> aiohttp.ClientResponse:
             """Unrestrict a hoster link and get a new unrestricted link
 
             Args:
@@ -178,56 +187,56 @@ class RealDebrid:
                 remote (str, optional): 0 or 1, use remote traffic. Defaults to None.
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.post("/unrestrict/link", link=link, password=password, remote=remote)
+            return await self.rd.post("/unrestrict/link", link=link, password=password, remote=remote)
 
-        def folder(self, link: str) -> requests.Response:
+        async def folder(self, link: str) -> aiohttp.ClientResponse:
             """Unrestrict a hoster folder link and get individual links
 
             Args:
                 link (str): Original hoster link
 
             Returns:
-                requests.Response: Request object from requests library (text returns an empty array if no links found)
+                aiohttp.ClientResponse: Request object from aiohttp library (text returns an empty array if no links found)
             """
             return self.rd.post("/unrestrict/folder", link=link)
 
-        def container_file(self, filepath: Path | str) -> requests.Response:
+        async def container_file(self, filepath: Path | str) -> aiohttp.ClientResponse:
             """Decrypt a container file (RSDF, CCF, CCF3, DLC)
 
             Args:
                 filepath (Path | str): Path to container file
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.put("/unrestrict/containerFile", filepath=filepath)
+            return await self.rd.put("/unrestrict/containerFile", filepath=filepath)
 
-        def container_link(self, link: str) -> requests.Response:
+        async def container_link(self, link: str) -> aiohttp.ClientResponse:
             """Decrypt a container file from a link
 
             Args:
                 link (str): Link to the container file
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.post("/unrestrict/containerLink", link=link)
+            return await self.rd.post("/unrestrict/containerLink", link=link)
 
     class Traffic:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def get(self) -> requests.Response:
+        async def get(self) -> aiohttp.ClientResponse:
             """Get traffic information for limited hosters
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/traffic")
+            return await self.rd.get("/traffic")
 
-        def details(self, start: str = None, end: str = None) -> requests.Response:
+        async def details(self, start: str = None, end: str = None) -> aiohttp.ClientResponse:
             """Get traffic details on each hoster during a defined period
 
             Args:
@@ -235,41 +244,41 @@ class RealDebrid:
                 end (str, optional): End date (YYYY-MM-DD). Defaults to None (today).
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/traffic/details", start=start, end=end)
+            return await self.rd.get("/traffic/details", start=start, end=end)
 
     class Streaming:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def transcode(self, id: str) -> requests.Response:
+        async def transcode(self, id: str) -> aiohttp.ClientResponse:
             """Get transcoding links for given file
 
             Args:
                 id (str): Torrent id from /downloads or /unrestrict/link
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get(f"/streaming/transcode/{id}")
+            return await self.rd.get(f"/streaming/transcode/{id}")
 
-        def media_infos(self, id: str) -> requests.Response:
+        async def media_infos(self, id: str) -> aiohttp.ClientResponse:
             """Get detailled media informations for given file
 
             Args:
                 id (str): Torrent id from /downloads or /unrestrict/link
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get(f"/streaming/mediaInfos/{id}")
+            return await self.rd.get(f"/streaming/mediaInfos/{id}")
 
     class Downloads:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def get(self, offset: int = None, page: int = None, limit: int = None) -> requests.Response:
+        async def get(self, offset: int = None, page: int = None, limit: int = None) -> aiohttp.ClientResponse:
             """Get user downloads list
 
             Args:
@@ -278,28 +287,28 @@ class RealDebrid:
                 limit (int, optional): Entries returned per page / request (must be within 0 and 5000). Defaults to None (100).
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/downloads", offset=offset, page=page, limit=limit)
+            return await self.rd.get("/downloads", offset=offset, page=page, limit=limit)
 
-        def delete(self, id: str) -> requests.Response:
+        async def delete(self, id: str) -> aiohttp.ClientResponse:
             """Delete a link from downloads list
 
             Args:
                 id (str): Torrent id from /downloads or /unrestrict/link
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.delete(f"/downloads/delete/{id}")
+            return await self.rd.delete(f"/downloads/delete/{id}")
 
     class Torrents:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def get(
+        async def get(
             self, offset: int = None, page: int = None, limit: int = None, filter: str = None
-        ) -> requests.Response:
+        ) -> aiohttp.ClientResponse:
             """Get user torrents list
 
             Args:
@@ -309,49 +318,49 @@ class RealDebrid:
                 filter (str, optional): "active", list active torrents only. Defaults to None.
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/torrents", offset=offset, page=page, limit=limit, filter=filter)
+            return await self.rd.get("/torrents", offset=offset, page=page, limit=limit, filter=filter)
 
-        def info(self, id: str) -> requests.Response:
+        async def info(self, id: str) -> aiohttp.ClientResponse:
             """Get information of a torrent
 
             Args:
                 id (str): Torrent id from /downloads or /unrestrict/link
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get(f"/torrents/info/{id}")
+            return await self.rd.get(f"/torrents/info/{id}")
 
-        def instant_availability(self, hash: str) -> requests.Response:
+        async def instant_availability(self, hash: str) -> aiohttp.ClientResponse:
             """Get list of instantly available file IDs by hoster
 
             Args:
                 hash (str): SHA1 of the torrent
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get(f"/torrents/instantAvailability/{hash}")
+            return await self.rd.get(f"/torrents/instantAvailability/{hash}")
 
-        def active_count(self) -> requests.Response:
+        async def active_count(self) -> aiohttp.ClientResponse:
             """Get currently active torrents number and the current maximum limit
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/torrents/activeCount")
+            return await self.rd.get("/torrents/activeCount")
 
-        def available_hosts(self) -> requests.Response:
+        async def available_hosts(self) -> aiohttp.ClientResponse:
             """Get available hosts to upload the torrent to
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/torrents/availableHosts")
+            return await self.rd.get("/torrents/availableHosts")
 
-        def add_torrent(self, filepath: Path | str, host: str = None) -> requests.Response:
+        async def add_torrent(self, filepath: Path | str, host: str = None) -> aiohttp.ClientResponse:
             """Add a torrent file to download
 
             Args:
@@ -359,11 +368,11 @@ class RealDebrid:
                 host (str, optional): Hoster domain (from torrents.available_hosts). Defaults to None.
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.put("/torrents/addTorrent", filepath=filepath, host=host)
+            return await self.rd.put("/torrents/addTorrent", filepath=filepath, host=host)
 
-        def add_magnet(self, magnet: str, host: str = None) -> requests.Response:
+        async def add_magnet(self, magnet: str, host: str = None) -> aiohttp.ClientResponse:
             """Add a magnet link to download
 
             Args:
@@ -371,11 +380,11 @@ class RealDebrid:
                 host (str, optional): Hoster domain (from torrents.available_hosts). Defaults to None.
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.post("/torrents/addMagnet", magnet=f"magnet:?xt=urn:btih:{magnet}", host=host)
+            return await self.rd.post("/torrents/addMagnet", magnet=f"magnet:?xt=urn:btih:{magnet}", host=host)
 
-        def select_files(self, id: str, files: str) -> requests.Response:
+        async def select_files(self, id: str, files: str) -> aiohttp.ClientResponse:
             """Select files of a torrent to start it
 
             Args:
@@ -383,78 +392,78 @@ class RealDebrid:
                 files (str): Selected files IDs (comma separated) or "all"
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.post(f"/torrents/selectFiles/{id}", files=files)
+            return await self.rd.post(f"/torrents/selectFiles/{id}", files=files)
 
-        def delete(self, id: str) -> requests.Response:
+        async def delete(self, id: str) -> aiohttp.ClientResponse:
             """Delete a torrent from torrents list
 
             Args:
                 id (str): Torrent id from /downloads or /unrestrict/link
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.delete(f"/torrents/delete/{id}")
+            return await self.rd.delete(f"/torrents/delete/{id}")
 
     class Hosts:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def get(self) -> requests.Response:
+        async def get(self) -> aiohttp.ClientResponse:
             """Get supported hosts
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/hosts")
+            return await self.rd.get("/hosts")
 
-        def status(self) -> requests.Response:
+        async def status(self) -> aiohttp.ClientResponse:
             """Get status of supported hosters, and from competetors
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/hosts/status")
+            return await self.rd.get("/hosts/status")
 
-        def regex(self) -> requests.Response:
+        async def regex(self) -> aiohttp.ClientResponse:
             """Get all supported links regex
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/hosts/regex")
+            return await self.rd.get("/hosts/regex")
 
-        def regex_folder(self) -> requests.Response:
+        async def regex_folder(self) -> aiohttp.ClientResponse:
             """Get all supported folder regex
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/hosts/regexFolder")
+            return await self.rd.get("/hosts/regexFolder")
 
-        def domains(self) -> requests.Response:
+        async def domains(self) -> aiohttp.ClientResponse:
             """Get all supported hoster domains
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/hosts/domains")
+            return await self.rd.get("/hosts/domains")
 
     class Settings:
         def __init__(self, rd: any) -> None:
             self.rd = rd
 
-        def get(self) -> requests.Response:
+        async def get(self) -> aiohttp.ClientResponse:
             """Get current user settings with possible values to update
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.get("/settings")
+            return await self.rd.get("/settings")
 
-        def update(self, setting_name: str, setting_value: str) -> requests.Response:
+        async def update(self, setting_name: str, setting_value: str) -> aiohttp.ClientResponse:
             """Update a user setting
 
             Args:
@@ -462,41 +471,41 @@ class RealDebrid:
                 setting_value (str): Setting value
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.post("/settings/update", setting_name=setting_name, setting_value=setting_value)
+            return await self.rd.post("/settings/update", setting_name=setting_name, setting_value=setting_value)
 
-        def convert_points(self) -> requests.Response:
+        async def convert_points(self) -> aiohttp.ClientResponse:
             """Convert fidelity points
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.post("/settings/convertPoints")
+            return await self.rd.post("/settings/convertPoints")
 
-        def change_password(self) -> requests.Response:
+        async def change_password(self) -> aiohttp.ClientResponse:
             """Send the verification email to change the account password
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.post("/settings/changePassword")
+            return await self.rd.post("/settings/changePassword")
 
-        def avatar_file(self, filepath: Path | str) -> requests.Response:
+        async def avatar_file(self, filepath: Path | str) -> aiohttp.ClientResponse:
             """Upload a new user avatar image
 
             Args:
                 filepath (Path | str): Path to the avatar url
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.put("/settings/avatarFile", filepath=filepath)
+            return await self.rd.put("/settings/avatarFile", filepath=filepath)
 
-        def avatar_delete(self) -> requests.Response:
+        async def avatar_delete(self) -> aiohttp.ClientResponse:
             """Reset user avatar image to default
 
             Returns:
-                requests.Response: Request object from requests library
+                aiohttp.ClientResponse: Request object from aiohttp library
             """
-            return self.rd.delete("/settings/avatarDelete")
+            return await self.rd.delete("/settings/avatarDelete")
